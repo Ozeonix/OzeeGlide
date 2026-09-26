@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.ArnasDon/wacrm-mcp",
-  "description": "Drive a self-hosted wacrm WhatsApp CRM from Claude, Cursor and other MCP clients.",
+  "name": "io.github.ArnasDon/OzeeGlide-mcp",
+  "description": "Drive a self-hosted OzeeGlide WhatsApp CRM from Claude, Cursor and other MCP clients.",
   "repository": {
-    "url": "https://github.com/ArnasDon/wacrm",
+    "url": "https://github.com/ArnasDon/OzeeGlide",
     "source": "github",
     "subfolder": "mcp-server"
   },
@@ -11,36 +11,36 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "wacrm-mcp",
+      "identifier": "OzeeGlide-mcp",
       "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
-          "name": "WACRM_BASE_URL",
-          "description": "Base URL of your wacrm instance, e.g. https://crm.example.com",
+          "name": "OzeeGlide_BASE_URL",
+          "description": "Base URL of your OzeeGlide instance, e.g. https://crm.example.com",
           "isRequired": true,
           "isSecret": false,
           "format": "string"
         },
         {
-          "name": "WACRM_API_KEY",
-          "description": "wacrm API key (Settings → API keys). Its scopes decide what is allowed.",
+          "name": "OzeeGlide_API_KEY",
+          "description": "OzeeGlide API key (Settings → API keys). Its scopes decide what is allowed.",
           "isRequired": true,
           "isSecret": true,
           "format": "string"
         },
         {
-          "name": "WACRM_ENABLE_WRITES",
+          "name": "OzeeGlide_ENABLE_WRITES",
           "description": "Set to true to expose contact create/update and message sending. Read-only when unset.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
         },
         {
-          "name": "WACRM_ENABLE_BROADCASTS",
-          "description": "Set to true to expose the mass-broadcast tool. Requires WACRM_ENABLE_WRITES.",
+          "name": "OzeeGlide_ENABLE_BROADCASTS",
+          "description": "Set to true to expose the mass-broadcast tool. Requires OzeeGlide_ENABLE_WRITES.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"

@@ -1,7 +1,7 @@
 // ============================================================
 // Configuration — read once at startup from the environment.
 //
-// The server needs the URL of a wacrm instance and an API key.
+// The server needs the URL of a OzeeGlide instance and an API key.
 // Two opt-in flags decide whether write / broadcast tools are
 // registered at all: by default the server is READ-ONLY, so an
 // MCP client can never see a tool that mutates data or sends a
@@ -24,17 +24,17 @@ function truthy(value: string | undefined): boolean {
 }
 
 export function loadConfig(): Config {
-  const baseUrlRaw = process.env.WACRM_BASE_URL?.trim();
-  const apiKey = process.env.WACRM_API_KEY?.trim();
+  const baseUrlRaw = process.env.OzeeGlide_BASE_URL?.trim();
+  const apiKey = process.env.OzeeGlide_API_KEY?.trim();
 
   const missing: string[] = [];
-  if (!baseUrlRaw) missing.push('WACRM_BASE_URL');
-  if (!apiKey) missing.push('WACRM_API_KEY');
+  if (!baseUrlRaw) missing.push('OzeeGlide_BASE_URL');
+  if (!apiKey) missing.push('OzeeGlide_API_KEY');
   if (missing.length > 0) {
     throw new Error(
       `Missing required environment variable(s): ${missing.join(', ')}. ` +
-        `Set WACRM_BASE_URL to your instance URL (e.g. https://crm.example.com) ` +
-        `and WACRM_API_KEY to a key from Settings → API keys.`,
+        `Set OzeeGlide_BASE_URL to your instance URL (e.g. https://crm.example.com) ` +
+        `and OzeeGlide_API_KEY to a key from Settings → API keys.`,
     );
   }
 
@@ -42,16 +42,16 @@ export function loadConfig(): Config {
   const baseUrl = baseUrlRaw!.replace(/\/+$/, '');
   if (!/^https?:\/\//.test(baseUrl)) {
     throw new Error(
-      `WACRM_BASE_URL must start with http:// or https:// (got "${baseUrl}").`,
+      `OzeeGlide_BASE_URL must start with http:// or https:// (got "${baseUrl}").`,
     );
   }
 
-  const enableWrites = truthy(process.env.WACRM_ENABLE_WRITES);
-  const enableBroadcasts = truthy(process.env.WACRM_ENABLE_BROADCASTS);
+  const enableWrites = truthy(process.env.OzeeGlide_ENABLE_WRITES);
+  const enableBroadcasts = truthy(process.env.OzeeGlide_ENABLE_BROADCASTS);
 
   if (enableBroadcasts && !enableWrites) {
     throw new Error(
-      'WACRM_ENABLE_BROADCASTS requires WACRM_ENABLE_WRITES to also be set.',
+      'OzeeGlide_ENABLE_BROADCASTS requires OzeeGlide_ENABLE_WRITES to also be set.',
     );
   }
 
