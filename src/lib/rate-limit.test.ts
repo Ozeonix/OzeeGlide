@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetRateLimitForTests,
   checkRateLimit,
+  checkRateLimitAsync,
   rateLimitResponse,
 } from "./rate-limit";
 
@@ -110,6 +111,36 @@ describe("RATE_LIMITS presets", () => {
     // per minute. Sized below that, every batch past the cap comes back
     // 429 and its recipients are written off as failed (issue #472).
     expect(RATE_LIMITS.broadcast.limit).toBeGreaterThanOrEqual(45);
+  });
+
+  it("webhookIngest preset has a high capacity window", async () => {
+    __resetRateLimitForTests();
+    const { RATE_LIMITS } = await import("./rate-limit");
+    expect(RATE_LIMITS.webhookIngest.limit).toBe(1000);
+    expect(RATE_LIMITS.webhookIngest.windowMs).toBe(60_000);
+  });
+});
+
+describe("checkRateLimitAsync", () => {
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  it("functions and falls back cleanly without Redis env vars", async () => {
+    const res1 = await checkRateLimitAsync("user:async:1", OPTS);
+    expect(res1.success).toBe(true);
+    expect(res1.remaining).toBe(2);
+
+    const res2 = await checkRateLimitAsync("user:async:1", OPTS);
+    expect(res2.success).toBe(true);
+    expect(res2.remaining).toBe(1);
+
+    const res3 = await checkRateLimitAsync("user:async:1", OPTS);
+    expect(res3.success).toBe(true);
+    expect(res3.remaining).toBe(0);
+
+    const res4 = await checkRateLimitAsync("user:async:1", OPTS);
+    expect(res4.success).toBe(false);
   });
 });
 
