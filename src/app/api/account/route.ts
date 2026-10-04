@@ -23,14 +23,20 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+import { withCache, invalidate } from "@/lib/cache";
 
 export async function GET() {
   try {
     const ctx = await getCurrentAccount();
-    return NextResponse.json({
-      account: ctx.account,
-      role: ctx.role,
-    });
+    const cached = await withCache(
+      `account:${ctx.accountId}:info`,
+      60,
+      async () => ({
+        account: ctx.account,
+        role: ctx.role,
+      }),
+    );
+    return NextResponse.json(cached);
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -96,6 +102,7 @@ export async function PATCH(request: Request) {
       );
     }
 
+    await invalidate(`account:${ctx.accountId}:info`);
     return NextResponse.json({ account: data });
   } catch (err) {
     return toErrorResponse(err);

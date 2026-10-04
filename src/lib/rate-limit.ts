@@ -21,6 +21,8 @@
  */
 
 import { NextResponse } from 'next/server';
+import { Redis } from '@upstash/redis';
+import { Ratelimit } from '@upstash/ratelimit';
 
 export interface RateLimitOptions {
   /** Max requests allowed in `windowMs`. */
@@ -57,6 +59,10 @@ function sweepExpired(now: number) {
   }
 }
 
+/**
+ * Synchronous in-memory rate limiter.
+ * Ideal for local development, unit tests, or single-process setups.
+ */
 export function checkRateLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions,
@@ -87,6 +93,58 @@ export function checkRateLimit(
     reset: entry.resetAt,
     limit,
   };
+}
+
+// ----------------------------------------------------------------------
+// Distributed Upstash Redis Rate Limiting (for 50k+ user multi-instance)
+// ----------------------------------------------------------------------
+const upstashLimiters = new Map<string, Ratelimit>();
+
+function getUpstashLimiter(limit: number, windowMs: number): Ratelimit | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+
+  const key = `${limit}:${windowMs}`;
+  let limiter = upstashLimiters.get(key);
+  if (!limiter) {
+    const redis = new Redis({ url, token });
+    const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
+    limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(limit, `${windowSec} s`),
+      analytics: false,
+      prefix: 'rl',
+    });
+    upstashLimiters.set(key, limiter);
+  }
+  return limiter;
+}
+
+/**
+ * Async distributed rate limiter using Upstash Redis.
+ * Falls back transparently to in-memory checkRateLimit if Redis env vars
+ * are missing or during a Redis connection issue.
+ */
+export async function checkRateLimitAsync(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const limiter = getUpstashLimiter(opts.limit, opts.windowMs);
+  if (limiter) {
+    try {
+      const res = await limiter.limit(key);
+      return {
+        success: res.success,
+        remaining: res.remaining,
+        reset: res.reset,
+        limit: res.limit,
+      };
+    } catch {
+      // Degrade gracefully to in-memory
+    }
+  }
+  return checkRateLimit(key, opts);
 }
 
 /**
@@ -120,59 +178,27 @@ export const RATE_LIMITS = {
   /** Broadcast dispatch. NOT one call per campaign: the wizard fans a
    *  campaign out over `/api/whatsapp/broadcast` in batches of 10
    *  recipients, roughly one call every 1–2 s, so a 1 000-recipient
-   *  send is ~100 calls over several minutes. This bucket was 5/min on
-   *  the assumption of one call per campaign, which meant everything
-   *  past the first ~50 recipients came back 429 and was recorded as a
-   *  failed recipient (issue #472). 60/min per user carries the wizard's
-   *  pacing with headroom while still bounding a script in a loop;
-   *  Meta's own per-number limits remain the real throughput ceiling. */
+   *  send is ~100 calls over several minutes. 60/min per user carries the
+   *  wizard's pacing with headroom while still bounding a script in a loop. */
   broadcast: { limit: 60, windowMs: 60_000 },
-  /** Reaction add/swap/remove. More permissive than send — users
-   *  fidget with reactions and a single "swap" is actually two calls
-   *  (remove + add) under the hood. */
+  /** Reaction add/swap/remove. More permissive than send. */
   react: { limit: 120, windowMs: 60_000 },
-  /** Invitation peek (public, per-IP). 30/min lets a forwarded link
-   *  retry a handful of times under flaky connectivity without
-   *  enabling brute-force token enumeration. With 256-bit tokens the
-   *  enumeration risk is theoretical; this is belt-and-braces. */
+  /** Invitation peek (public, per-IP). */
   invitationPeek: { limit: 30, windowMs: 60_000 },
-  /** Invitation redeem (authed, per-IP+user). Tighter than peek —
-   *  successful redemption mutates two profiles and an invite row, so
-   *  the abuse surface is "spam join attempts." */
+  /** Invitation redeem (authed, per-IP+user). */
   invitationRedeem: { limit: 10, windowMs: 60_000 },
-  /** Admin-only account / member-management actions: create/revoke
-   *  invitation, rename account, change member role, remove member,
-   *  transfer ownership. 30/min per user is comfortably above any
-   *  realistic legitimate use (the Members tab is a clicks-only UI)
-   *  while still bounding accidental abuse from a script run in a
-   *  loop or a compromised admin session spamming role flips. */
+  /** Admin-only account / member-management actions. */
   adminAction: { limit: 30, windowMs: 60_000 },
-  /** Public REST API (`/api/v1/*`), keyed per API key. 120/min ≈ 2
-   *  req/s sustained — comfortable for a polling integration or an
-   *  automation firing on inbound events, while bounding a runaway
-   *  script. Like every bucket here it's per-process; a multi-
-   *  instance deploy needs the Redis swap described at the top of
-   *  this file (the per-key call sites don't change). */
+  /** Public REST API (`/api/v1/*`), keyed per API key. */
   publicApi: { limit: 120, windowMs: 60_000 },
-  /** AI draft-reply generation, per user. 20/min is generous for an
-   *  agent clicking "Draft with AI" while working a thread, and bounds
-   *  spend on the account's own LLM key against an accidental
-   *  hold-down / script. */
+  /** AI draft-reply generation, per user. */
   aiDraft: { limit: 20, windowMs: 60_000 },
-  /** AI draft-reply generation, per account. Caps the WHOLE team's
-   *  draws on the one shared BYO provider key — without this, N agents
-   *  each under their per-user limit could still stampede the account's
-   *  key past the provider's own rate limit. 60/min ≈ three busy agents
-   *  drafting flat-out. */
+  /** AI draft-reply generation, per account. */
   aiDraftAccount: { limit: 60, windowMs: 60_000 },
-  /** AI auto-reply generation, per account. The per-conversation cap
-   *  (`auto_reply_max_per_conversation`) bounds one thread; this bounds
-   *  the whole account across threads, so a burst of inbound from many
-   *  customers at once can't run the BYO key past the provider's limit
-   *  or the owner's budget. 30/min is generous for organic inbound while
-   *  capping a stampede; excess inbounds simply don't get an auto-reply
-   *  (they still land in the inbox for a human). */
+  /** AI auto-reply generation, per account. */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Webhook ingest from Meta (millions of webhook events at scale). */
+  webhookIngest: { limit: 1000, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
@@ -180,4 +206,5 @@ export const RATE_LIMITS = {
 export function __resetRateLimitForTests() {
   buckets.clear();
   callsSinceSweep = 0;
+  upstashLimiters.clear();
 }

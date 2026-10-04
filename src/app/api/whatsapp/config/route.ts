@@ -21,6 +21,7 @@ import {
   phoneNumberBelongsToWaba,
 } from '@/lib/whatsapp/waba-pairing'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { invalidate } from '@/lib/cache'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -556,6 +557,9 @@ export async function POST(request: Request) {
       })
     }
 
+    if (accountId) {
+      await invalidate(`account:${accountId}:whatsapp-status`)
+    }
     return NextResponse.json({
       success: true,
       saved: true,
@@ -614,6 +618,7 @@ export async function DELETE() {
       )
     }
 
+    await invalidate(`account:${accountId}:whatsapp-status`)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in WhatsApp config DELETE:', error)
