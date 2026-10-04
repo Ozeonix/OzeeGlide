@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { log } from '@/lib/logger'
 
 // ------------------------------------------------------------
 // Public API
@@ -100,21 +101,25 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
       .eq('is_active', true)
 
     if (error) {
-      console.error('[automations] fetch failed:', error)
+      log.error({ error, accountId: input.accountId, triggerType: input.triggerType }, '[automations] fetch failed')
       return
     }
     if (!automations || automations.length === 0) return
 
-    for (const automation of automations as Automation[]) {
-      if (!triggerMatches(automation, input.context)) continue
-      try {
-        await executeAutomation(automation, input)
-      } catch (err) {
-        console.error('[automations] execute failed:', automation.id, err)
-      }
-    }
+    const matching = (automations as Automation[]).filter((a) =>
+      triggerMatches(a, input.context),
+    )
+    await Promise.allSettled(
+      matching.map(async (automation) => {
+        try {
+          await executeAutomation(automation, input)
+        } catch (err) {
+          log.error({ err, automationId: automation.id }, '[automations] execute failed')
+        }
+      }),
+    )
   } catch (err) {
-    console.error('[automations] dispatch failed:', err)
+    log.error({ err, accountId: input.accountId }, '[automations] dispatch failed')
   }
 }
 
@@ -485,15 +490,20 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
+        // Rotate using the contact_id as a stable hash so the same
+        // contact always routes to the same agent (session affinity).
         const { data: profiles } = await db
           .from('profiles')
           .select('user_id')
           .eq('account_id', args.automation.account_id)
-          .limit(1)
-        agentId = profiles?.[0]?.user_id
+          .order('user_id')
+        if (profiles && profiles.length > 0) {
+          const hashVal = (args.contactId || '')
+            .split('')
+            .reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) >>> 0, 0)
+          const idx = hashVal % profiles.length
+          agentId = profiles[idx].user_id
+        }
       }
       if (!agentId) return 'no agent resolved'
       await db
