@@ -5,13 +5,13 @@
   "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
   "license": "MIT",
   "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/OzeeGlide",
+  "homepage": "https://github.com/Ozeonix/OzeeGlide",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArnasDon/OzeeGlide.git"
+    "url": "git+https://github.com/Ozeonix/OzeeGlide.git"
   },
   "bugs": {
-    "url": "https://github.com/ArnasDon/OzeeGlide/issues"
+    "url": "https://github.com/Ozeonix/OzeeGlide/issues"
   },
   "keywords": [
     "crm",

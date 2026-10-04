@@ -1,14 +1,14 @@
 {
   "name": "OzeeGlide-mcp",
   "version": "0.1.1",
-  "mcpName": "io.github.ArnasDon/OzeeGlide-mcp",
+  "mcpName": "io.github.Ozeonix/OzeeGlide-mcp",
   "description": "Model Context Protocol (MCP) server for OzeeGlide — drive your self-hosted WhatsApp CRM from Claude, Cursor, and other MCP clients.",
   "license": "MIT",
   "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/OzeeGlide",
+  "homepage": "https://github.com/Ozeonix/OzeeGlide",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArnasDon/OzeeGlide.git",
+    "url": "git+https://github.com/Ozeonix/OzeeGlide.git",
     "directory": "mcp-server"
   },
   "keywords": [

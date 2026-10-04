@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.ArnasDon/OzeeGlide-mcp",
+  "name": "io.github.Ozeonix/OzeeGlide-mcp",
   "description": "Drive a self-hosted OzeeGlide WhatsApp CRM from Claude, Cursor and other MCP clients.",
   "repository": {
-    "url": "https://github.com/ArnasDon/OzeeGlide",
+    "url": "https://github.com/Ozeonix/OzeeGlide",
     "source": "github",
     "subfolder": "mcp-server"
   },
