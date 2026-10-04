@@ -1,0 +1,59 @@
+name: Automation Cron
+
+# Drains automation_pending_executions rows whose run_at has passed.
+# This is what makes Wait steps in automations actually fire on schedule.
+#
+# GitHub Actions has ~1-minute scheduler granularity. The endpoint is
+# idempotent — running it more than once per minute is harmless; each
+# call processes only rows where run_at <= NOW().
+#
+# Alternative approaches (no GitHub Actions required):
+#   A. Supabase pg_cron + pg_net (Pro plan):
+#      SELECT cron.schedule('drain-automations', '* * * * *',
+#        $$SELECT net.http_get(url := 'https://crm.example.com/api/automations/cron?secret=...')$$);
+#   B. Upstash QStash — schedule a POST to the cron endpoint, free tier.
+
+on:
+  schedule:
+    # Every minute. GitHub's scheduler may fire up to ~2 min late during
+    # high-load periods — that's acceptable for automation wait steps.
+    - cron: '* * * * *'
+  # Allow manual trigger from Actions UI for debugging
+  workflow_dispatch:
+
+# Never queue multiple cron runs — if the previous minute's drain is
+# still running when the next fires, cancel the new one instead of
+# piling up concurrent drains (which are harmless but wasteful).
+concurrency:
+  group: automation-cron
+  cancel-in-progress: true
+
+jobs:
+  drain:
+    name: Drain pending automation executions
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping cron endpoint
+        env:
+          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+        run: |
+          RESPONSE=$(curl --silent --show-error --fail-with-body \
+            --max-time 90 \
+            --retry 3 \
+            --retry-delay 5 \
+            --write-out "\n%{http_code}" \
+            "${SITE_URL}/api/automations/cron?secret=${CRON_SECRET}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP status: ${HTTP_CODE}"
+          echo "Response body: ${BODY}"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Cron endpoint returned non-2xx status: ${HTTP_CODE}"
+            exit 1
+          fi

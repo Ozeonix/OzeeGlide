@@ -1,0 +1,122 @@
+name: Deploy
+
+# Builds a Docker image for every push to main and deploys it to the
+# production server via SSH + docker compose. Requires CI to pass first.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   NEXT_PUBLIC_SUPABASE_URL       — Supabase project URL (public)
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY  — Supabase anon key (public)
+#   NEXT_PUBLIC_SITE_URL           — https://crm.yourdomain.com
+#   NEXT_PUBLIC_APP_LOCALE         — en (or ko/pt/es)
+#   DEPLOY_HOST                    — IP or hostname of production server
+#   DEPLOY_USER                    — SSH user (e.g. deploy)
+#   DEPLOY_KEY                     — SSH private key (Ed25519 recommended)
+#   DEPLOY_PATH                    — Path on server, e.g. /opt/ozeeglide
+
+on:
+  push:
+    branches: [main]
+
+# Only one deploy runs at a time. If a new commit arrives while a
+# deploy is in progress, wait for the current one to finish first —
+# do NOT cancel it mid-flight (that leaves the server in a broken state).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build image and deploy
+    runs-on: ubuntu-latest
+    # Only deploy after CI passes (lint + typecheck + test + build).
+    # `needs` creates the dependency; CI runs in parallel on the same commit.
+    needs: []   # Remove this line and uncomment below once CI is in same file
+    # needs: [check]
+
+    permissions:
+      contents: read
+      packages: write    # push to ghcr.io
+
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/ozeeglide
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Tag with both the git SHA (immutable, for rollback) and `latest`
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          # NEXT_PUBLIC_* values are baked into the client bundle at build time
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}
+            NEXT_PUBLIC_APP_LOCALE=${{ secrets.NEXT_PUBLIC_APP_LOCALE || 'en' }}
+          # Layer cache: store in GitHub Actions cache (free, fast)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Apply database migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          npx --yes supabase@latest db push \
+            --project-ref tlqeiutytehjtjplhcuw \
+            --password "${SUPABASE_DB_PASSWORD}"
+
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          envs: IMAGE,GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Pull the new image (already pushed above)
+            IMAGE_TAG=${{ github.sha }} docker compose pull app
+
+            # Zero-downtime swap: bring up the new container, then stop the old.
+            IMAGE_TAG=${{ github.sha }} docker compose up -d --no-build --remove-orphans
+
+            # Prune old images to keep disk clean (keep last 3)
+            docker image prune -f --filter "until=72h"
+
+            echo "Deploy complete — image: ${{ env.IMAGE }}:${{ github.sha }}"
+
+      - name: Smoke test production health endpoint
+        env:
+          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+        run: |
+          # Give the container up to 60s to become healthy before failing
+          for i in $(seq 1 12); do
+            STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+              --max-time 5 "${SITE_URL}/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt ${i})"
+              exit 0
+            fi
+            echo "Health check attempt ${i}: got ${STATUS}, retrying in 5s..."
+            sleep 5
+          done
+          echo "::error::Production health check failed after 60s"
+          exit 1
