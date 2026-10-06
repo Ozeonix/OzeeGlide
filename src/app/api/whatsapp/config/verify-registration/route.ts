@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   getSubscribedApps,
@@ -142,11 +143,22 @@ export async function GET() {
 
   const live =
     checks.phone_metadata_ok &&
-    (checks.waba_subscribed_to_app ?? false) &&
-    checks.locally_marked_registered
+    (checks.waba_subscribed_to_app ?? false)
+
+  if (live && !config.registered_at) {
+    const nowIso = new Date().toISOString()
+    await supabaseAdmin()
+      .from('whatsapp_config')
+      .update({ registered_at: nowIso })
+      .eq('id', config.id)
+    checks.locally_marked_registered = true
+    config.registered_at = nowIso
+  } else {
+    checks.locally_marked_registered = config.registered_at != null
+  }
 
   return NextResponse.json({
-    live,
+    live: checks.phone_metadata_ok && (checks.waba_subscribed_to_app ?? false) && checks.locally_marked_registered,
     checks,
     errors,
     last_registration_error: config.last_registration_error ?? null,
