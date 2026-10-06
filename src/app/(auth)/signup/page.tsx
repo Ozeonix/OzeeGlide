@@ -70,7 +70,7 @@ function SignupPageInner() {
       ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
       : `${window.location.origin}/login`;
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -82,7 +82,27 @@ function SignupPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      if (error.message.toLowerCase().includes("rate limit")) {
+        setError("Email rate limit exceeded. If you already created an account, please sign in.");
+      } else {
+        setError(error.message);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // If Supabase immediately returns a session (e.g. email confirmations disabled), navigate to dashboard
+    if (data?.session) {
+      const destination = inviteToken
+        ? `/join/${encodeURIComponent(inviteToken)}`
+        : "/dashboard";
+      window.location.href = destination;
+      return;
+    }
+
+    // When an account with this email already exists, Supabase returns empty identities
+    if (data?.user && (!data.user.identities || data.user.identities.length === 0)) {
+      setError("An account with this email already exists. Please sign in instead.");
       setLoading(false);
       return;
     }
