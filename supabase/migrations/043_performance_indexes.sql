@@ -68,9 +68,9 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_conv_created_desc
   ON messages (conversation_id, created_at DESC);
 
 -- Outbound message status updates (webhook DELIVERED / READ)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_wamid
-  ON messages (whatsapp_message_id)
-  WHERE whatsapp_message_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_message_id_lookup
+  ON messages (message_id)
+  WHERE message_id IS NOT NULL;
 
 -- ----------------------------------------------------------------
 -- contacts — search by phone and name
@@ -99,8 +99,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_broadcast_recipients_broadcast_statu
 
 -- wamid lookup (webhook delivery status path — most frequent hit)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_broadcast_recipients_wamid
-  ON broadcast_recipients (wamid)
-  WHERE wamid IS NOT NULL;
+  ON broadcast_recipients (whatsapp_message_id)
+  WHERE whatsapp_message_id IS NOT NULL;
 
 -- ----------------------------------------------------------------
 -- api_keys — hash lookup
