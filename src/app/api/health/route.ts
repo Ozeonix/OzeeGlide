@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import packageInfo from '../../../../package.json'
 
 /**
  * GET /api/health
@@ -17,12 +18,13 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 const startedAt = new Date().toISOString()
+const appVersion = process.env.npm_package_version || packageInfo.version || '0.8.0'
 
 export async function GET() {
   return NextResponse.json(
     {
       status: 'ok',
-      version: process.env.npm_package_version ?? 'unknown',
+      version: appVersion,
       started_at: startedAt,
       timestamp: new Date().toISOString(),
     },
