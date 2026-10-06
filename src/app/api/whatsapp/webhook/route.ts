@@ -149,6 +149,15 @@ export async function GET(request: Request) {
       )
     }
 
+    // Check against global environment variable fallback (allows Meta verification before in-app setup)
+    const envVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN || process.env.META_VERIFY_TOKEN
+    if (envVerifyToken && envVerifyToken === verifyToken) {
+      return new Response(challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      })
+    }
+
     // Fetch all whatsapp configs to check verify tokens
     const { data: configs, error: configError } = await supabaseAdmin()
       .from('whatsapp_config')

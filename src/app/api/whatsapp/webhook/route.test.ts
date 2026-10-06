@@ -279,7 +279,7 @@ vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
 
-import { POST } from './route'
+import { POST, GET } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { findExistingContact } from '@/lib/contacts/dedupe'
 import { handleTemplateWebhookChange } from '@/lib/whatsapp/template-webhook'
@@ -1010,5 +1010,28 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     expect(h.state.recipientUpdates).toHaveLength(1)
     expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_message')
     expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_code')
+  })
+})
+
+describe('GET /api/whatsapp/webhook verification', () => {
+  it('returns challenge when WHATSAPP_VERIFY_TOKEN matches', async () => {
+    process.env.WHATSAPP_VERIFY_TOKEN = 'secret-token-123'
+    const req = new Request(
+      'https://example.com/api/whatsapp/webhook?hub.mode=subscribe&hub.challenge=test_challenge_abc&hub.verify_token=secret-token-123',
+    )
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('test_challenge_abc')
+    delete process.env.WHATSAPP_VERIFY_TOKEN
+  })
+
+  it('rejects with 403 when verify token does not match', async () => {
+    process.env.WHATSAPP_VERIFY_TOKEN = 'secret-token-123'
+    const req = new Request(
+      'https://example.com/api/whatsapp/webhook?hub.mode=subscribe&hub.challenge=test_challenge_abc&hub.verify_token=wrong-token',
+    )
+    const res = (await GET(req)) as any
+    expect(res.init?.status).toBe(403)
+    delete process.env.WHATSAPP_VERIFY_TOKEN
   })
 })
