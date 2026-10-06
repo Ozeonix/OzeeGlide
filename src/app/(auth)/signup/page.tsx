@@ -68,7 +68,7 @@ function SignupPageInner() {
     // redirect (the app root).
     const emailRedirectTo = inviteToken
       ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
-      : undefined;
+      : `${window.location.origin}/login`;
 
     const { error } = await supabase.auth.signUp({
       email,
