@@ -10,7 +10,8 @@ name: Automation Cron
 # Alternative approaches (no GitHub Actions required):
 #   A. Supabase pg_cron + pg_net (Pro plan):
 #      SELECT cron.schedule('drain-automations', '* * * * *',
-#        $$SELECT net.http_get(url := 'https://crm.example.com/api/automations/cron?secret=...')$$);
+#        $$SELECT net.http_get(url := 'https://crm.example.com/api/automations/cron',
+#          headers := '{"x-cron-secret":"..."}'::jsonb)$$);
 #   B. Upstash QStash — schedule a POST to the cron endpoint, free tier.
 
 on:
@@ -37,15 +38,21 @@ jobs:
     steps:
       - name: Ping cron endpoint
         env:
-          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-          CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL || vars.NEXT_PUBLIC_SITE_URL || '' }}
+          CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET || vars.AUTOMATION_CRON_SECRET || '' }}
         run: |
+          if [ -z "${SITE_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "::warning::Skipping automation drain because NEXT_PUBLIC_SITE_URL or AUTOMATION_CRON_SECRET is not configured."
+            exit 0
+          fi
+
           RESPONSE=$(curl --silent --show-error --fail-with-body \
             --max-time 90 \
             --retry 3 \
             --retry-delay 5 \
             --write-out "\n%{http_code}" \
-            "${SITE_URL}/api/automations/cron?secret=${CRON_SECRET}")
+            --header "x-cron-secret: ${CRON_SECRET}" \
+            "${SITE_URL%/}/api/automations/cron")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n -1)
