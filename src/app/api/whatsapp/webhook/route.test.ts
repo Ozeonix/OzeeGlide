@@ -1030,8 +1030,8 @@ describe('GET /api/whatsapp/webhook verification', () => {
     const req = new Request(
       'https://example.com/api/whatsapp/webhook?hub.mode=subscribe&hub.challenge=test_challenge_abc&hub.verify_token=wrong-token',
     )
-    const res = (await GET(req)) as any
-    expect(res.init?.status).toBe(403)
+    const res = (await GET(req)) as { init?: { status?: number } }
+    expect(res.init?.status ?? (res as Response).status).toBe(403)
     delete process.env.WHATSAPP_VERIFY_TOKEN
   })
 })
